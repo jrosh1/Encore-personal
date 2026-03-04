@@ -1,7 +1,0 @@
-{
-  "/settings/page": "app/settings/page.js",
-  "/artists/page": "app/artists/page.js",
-  "/page": "app/page.js",
-  "/api/events/route": "app/api/events/route.js",
-  "/api/artists/route": "app/api/artists/route.js"
-}
