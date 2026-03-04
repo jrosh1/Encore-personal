@@ -1,0 +1,14 @@
+node_modules
+.next/
+out/
+build/
+.DS_Store
+*.pem
+
+# Local env files
+.env*.local
+.env
+
+# Database file
+src/data/*.db
+src/data/*.db-journal

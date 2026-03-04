@@ -1,0 +1,27 @@
+{
+  "name": "concert-tracking",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "cheerio": "^1.0.0",
+    "imapflow": "^1.2.11",
+    "lucide-react": "^0.400.0",
+    "mailparser": "^3.9.3",
+    "next": "^14.2.0",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "eslint": "^8",
+    "eslint-config-next": "14.2.0"
+  }
+}
