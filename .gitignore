@@ -12,3 +12,4 @@ build/
 # Database file
 src/data/*.db
 src/data/*.db-journal
+.vercel

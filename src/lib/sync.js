@@ -168,11 +168,6 @@ async function syncVenueSchedules(userId, artists) {
     const allArtistNames = new Map();
     for (const artist of artists) {
         allArtistNames.set(artist.name.toLowerCase(), artist);
-        if (artist.members) {
-            for (const member of artist.members) {
-                allArtistNames.set(member.name.toLowerCase(), member);
-            }
-        }
     }
 
     for (const venue of venues) {
@@ -180,6 +175,32 @@ async function syncVenueSchedules(userId, artists) {
             const venueEvents = await scrapeWebsiteEvents(venue.website_url);
 
             for (const event of venueEvents) {
+                // Store ALL events in VenueEvent table for full venue calendar
+                try {
+                    await prisma.venueEvent.upsert({
+                        where: {
+                            venue_id_title_date: {
+                                venue_id: venue.id,
+                                title: event.title || 'Live Event',
+                                date: event.date,
+                            },
+                        },
+                        create: {
+                            userId,
+                            venue_id: venue.id,
+                            title: event.title || 'Live Event',
+                            date: event.date,
+                            time: event.time || null,
+                            source_url: event.source_url || venue.website_url,
+                        },
+                        update: {
+                            time: event.time || undefined,
+                            source_url: event.source_url || undefined,
+                        },
+                    });
+                } catch { /* skip duplicates or errors */ }
+
+                // Also match against tracked artists for the main Events table
                 const eventTitle = (event.title || '').toLowerCase();
                 let matchedArtist = null;
 
@@ -209,3 +230,4 @@ async function syncVenueSchedules(userId, artists) {
 
     return { newEvents, totalEvents };
 }
+

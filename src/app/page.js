@@ -16,6 +16,9 @@ export default function Dashboard() {
     const [syncing, setSyncing] = useState(false);
     const [toast, setToast] = useState(null);
     const [locationFilter, setLocationFilter] = useState('');
+    const [showVenueCalendar, setShowVenueCalendar] = useState(false);
+    const [venueEvents, setVenueEvents] = useState([]);
+    const [loadingVenues, setLoadingVenues] = useState(false);
 
     const fetchData = useCallback(async () => {
         try {
@@ -40,6 +43,18 @@ export default function Dashboard() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Fetch venue events when toggle is enabled
+    useEffect(() => {
+        if (showVenueCalendar && venueEvents.length === 0) {
+            setLoadingVenues(true);
+            fetch('/api/venue-events')
+                .then(res => res.json())
+                .then(data => setVenueEvents(data.venueEvents || []))
+                .catch(() => {})
+                .finally(() => setLoadingVenues(false));
+        }
+    }, [showVenueCalendar]);
 
     // Filter events by location search text
     const filteredEvents = useMemo(() => {
@@ -130,6 +145,30 @@ export default function Dashboard() {
             // Replace the existing entry if this one has a better source_url
             const idx = eventsByDate[event.date].findIndex(e => e.artist_name === event.artist_name && !e.source_url);
             if (idx !== -1) eventsByDate[event.date][idx] = event;
+        }
+    }
+
+    // Merge venue events into calendar when toggle is on
+    if (showVenueCalendar) {
+        const locationQuery = locationFilter.trim().toLowerCase();
+        for (const ve of venueEvents) {
+            // Apply location filter to venue events too
+            if (locationQuery) {
+                const loc = [ve.city, ve.state, ve.country].filter(Boolean).join(', ').toLowerCase();
+                if (!loc.includes(locationQuery)) continue;
+            }
+            if (!eventsByDate[ve.date]) eventsByDate[ve.date] = [];
+            // Don't duplicate if already listed (matched artist event)
+            const alreadyListed = eventsByDate[ve.date].some(
+                e => e.title === ve.title && e.venue === ve.venue
+            );
+            if (!alreadyListed) {
+                eventsByDate[ve.date].push({
+                    ...ve,
+                    artist_name: ve.title,
+                    isVenueEvent: true,
+                });
+            }
         }
     }
 
@@ -231,6 +270,22 @@ export default function Dashboard() {
                                 >×</button>
                             )}
                         </div>
+                        <button
+                            onClick={() => setShowVenueCalendar(!showVenueCalendar)}
+                            style={{
+                                background: showVenueCalendar ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                color: showVenueCalendar ? 'white' : 'var(--text-primary)',
+                                border: '1px solid ' + (showVenueCalendar ? 'var(--accent-primary)' : 'var(--border-color)'),
+                                borderRadius: 6,
+                                padding: '6px 10px',
+                                fontSize: 13,
+                                cursor: 'pointer',
+                                marginRight: 8,
+                                transition: 'all 0.2s ease',
+                            }}
+                        >
+                            {loadingVenues ? '⏳' : '🏛️'} {showVenueCalendar ? 'Venue Cal ON' : 'Venue Cal'}
+                        </button>
                         <button onClick={prevMonth}>← Prev</button>
                         <span className="current-month">{MONTHS[month]} {year}</span>
                         <button onClick={nextMonth}>Next →</button>
@@ -251,11 +306,12 @@ export default function Dashboard() {
                             {(eventsByDate[d.date] || []).slice(0, 3).map((event, j) => (
                                 <a
                                     key={j}
-                                    className={`calendar-event source-${event.source}`}
+                                    className={`calendar-event ${event.isVenueEvent ? 'source-venue-calendar' : `source-${event.source}`}`}
                                     href={event.source_url || '#'}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     title={`${event.artist_name} — ${event.venue || 'TBA'}, ${event.city || ''}`}
+                                    style={event.isVenueEvent ? { opacity: 0.7, fontStyle: 'italic' } : {}}
                                 >
                                     {event.artist_name}
                                 </a>

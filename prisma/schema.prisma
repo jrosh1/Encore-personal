@@ -50,10 +50,11 @@ model User {
   sessions Session[]
 
   // Encore Relations
-  artists  Artist[]
-  events   Event[]
-  settings Setting[]
-  venues   Venue[]
+  artists     Artist[]
+  events      Event[]
+  settings    Setting[]
+  venues      Venue[]
+  venueEvents VenueEvent[]
 }
 
 model VerificationToken {
@@ -132,9 +133,26 @@ model Venue {
   country     String?
   created_at  DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueEvents VenueEvent[]
 
   @@unique([userId, website_url]) // A user can't track the same venue URL twice
+}
+
+model VenueEvent {
+  id         Int      @id @default(autoincrement())
+  userId     String   // Multi-tenant isolation
+  venue_id   Int
+  title      String
+  date       String   // YYYY-MM-DD
+  time       String?
+  source_url String?
+  created_at DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue Venue @relation(fields: [venue_id], references: [id], onDelete: Cascade)
+
+  @@unique([venue_id, title, date])
 }
 
 model Setting {
