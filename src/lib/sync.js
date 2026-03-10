@@ -44,7 +44,7 @@ function isCoverBandEvent(event, canonicalArtistName) {
 
 export async function syncArtistEvents(userId, artist) {
     if (!userId) throw new Error("userId required");
-    const apiKey = await getSetting(userId, 'ticketmaster_api_key');
+    const apiKey = process.env.TICKETMASTER_API_KEY;
     let newEvents = 0;
     let totalEvents = 0;
 

@@ -32,8 +32,6 @@ export async function PUT(request) {
 
         const body = await request.json();
         const allowedKeys = [
-            'ticketmaster_api_key',
-            'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass',
             'notification_email',
             'poll_interval_hours',
             'spotify_client_id', 'spotify_client_secret',

@@ -10,22 +10,13 @@ export async function sendNewEventsEmail(userId, newEvents) {
     if (!userId) throw new Error("userId required");
     if (!newEvents || newEvents.length === 0) return { sent: false, reason: 'No new events' };
 
-    const smtpHost = await getSetting(userId, 'smtp_host');
-    const smtpPort = await getSetting(userId, 'smtp_port') || '587';
-    const smtpUser = await getSetting(userId, 'smtp_user');
-    const smtpPass = await getSetting(userId, 'smtp_pass');
     const notifyEmail = await getSetting(userId, 'notification_email');
 
-    if (!smtpHost || !smtpUser || !smtpPass || !notifyEmail) {
-        return { sent: false, reason: 'Email not configured. Set SMTP credentials in Settings.' };
+    if (!process.env.EMAIL_SERVER || !process.env.EMAIL_FROM || !notifyEmail) {
+        return { sent: false, reason: 'Email not configured. Set EMAIL_SERVER environment variable.' };
     }
 
-    const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: parseInt(smtpPort),
-        secure: parseInt(smtpPort) === 465,
-        auth: { user: smtpUser, pass: smtpPass },
-    });
+    const transporter = nodemailer.createTransport(process.env.EMAIL_SERVER);
 
     const eventRows = newEvents.map(e => `
     <tr>
@@ -69,7 +60,7 @@ export async function sendNewEventsEmail(userId, newEvents) {
 
     try {
         await transporter.sendMail({
-            from: smtpUser,
+            from: process.env.EMAIL_FROM,
             to: notifyEmail,
             subject: `🎵 ${newEvents.length} New Concert${newEvents.length > 1 ? 's' : ''} Found!`,
             html,
@@ -87,26 +78,17 @@ export async function sendNewEventsEmail(userId, newEvents) {
 export async function sendTestEmail(userId) {
     if (!userId) throw new Error("userId required");
 
-    const smtpHost = await getSetting(userId, 'smtp_host');
-    const smtpPort = await getSetting(userId, 'smtp_port') || '587';
-    const smtpUser = await getSetting(userId, 'smtp_user');
-    const smtpPass = await getSetting(userId, 'smtp_pass');
     const notifyEmail = await getSetting(userId, 'notification_email');
 
-    if (!smtpHost || !smtpUser || !smtpPass || !notifyEmail) {
-        return { sent: false, reason: 'Email not configured. Fill in all SMTP fields.' };
+    if (!process.env.EMAIL_SERVER || !process.env.EMAIL_FROM || !notifyEmail) {
+        return { sent: false, reason: 'Email not configured. Set EMAIL_SERVER environment variable.' };
     }
 
-    const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: parseInt(smtpPort),
-        secure: parseInt(smtpPort) === 465,
-        auth: { user: smtpUser, pass: smtpPass },
-    });
+    const transporter = nodemailer.createTransport(process.env.EMAIL_SERVER);
 
     try {
         await transporter.sendMail({
-            from: smtpUser,
+            from: process.env.EMAIL_FROM,
             to: notifyEmail,
             subject: '🎵 Encore — Test Email',
             html: `

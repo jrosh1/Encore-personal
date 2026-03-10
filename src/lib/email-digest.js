@@ -160,14 +160,10 @@ export async function sendDigestEmail(userId) {
     if (!userId) throw new Error("userId required");
     const nodemailer = (await import('nodemailer')).default;
 
-    const smtpHost = await getSetting(userId, 'smtp_host');
-    const smtpPort = parseInt(await getSetting(userId, 'smtp_port') || '587');
-    const smtpUser = await getSetting(userId, 'smtp_user');
-    const smtpPass = await getSetting(userId, 'smtp_pass');
     const recipientEmail = await getSetting(userId, 'notification_email');
 
-    if (!smtpHost || !smtpUser || !smtpPass || !recipientEmail) {
-        throw new Error('SMTP or notification email not configured');
+    if (!process.env.EMAIL_SERVER || !process.env.EMAIL_FROM || !recipientEmail) {
+        throw new Error('EMAIL_SERVER or notification email not configured');
     }
 
     // Fetch emails from the digest inbox
@@ -177,15 +173,10 @@ export async function sendDigestEmail(userId) {
     const digest = buildDigestSummary(emails);
 
     // Send it
-    const transport = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: { user: smtpUser, pass: smtpPass },
-    });
+    const transport = nodemailer.createTransport(process.env.EMAIL_SERVER);
 
     await transport.sendMail({
-        from: `"Encore" <${smtpUser}>`,
+        from: `"Encore Digest" <${process.env.EMAIL_FROM}>`,
         to: recipientEmail,
         subject: digest.subject,
         text: digest.text,

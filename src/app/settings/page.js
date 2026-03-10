@@ -168,24 +168,6 @@ export default function SettingsPage() {
 
             <form onSubmit={handleSave}>
                 <div className="settings-grid">
-                    {/* Ticketmaster API */}
-                    <div className="form-section">
-                        <h3>🎫 Ticketmaster API</h3>
-                        <div className="form-group">
-                            <label htmlFor="tm-key">API Key</label>
-                            <input
-                                id="tm-key"
-                                type="text"
-                                placeholder="Get your free key at developer.ticketmaster.com"
-                                value={settings.ticketmaster_api_key}
-                                onChange={(e) => updateSetting('ticketmaster_api_key', e.target.value)}
-                            />
-                        </div>
-                        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-                            Free tier: 5,000 calls/day. <a href="https://developer.ticketmaster.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }}>Get your key →</a>
-                        </p>
-                    </div>
-
                     {/* Spotify */}
                     <div className="form-section">
                         <h3>🎧 Spotify Import</h3>
@@ -244,66 +226,9 @@ export default function SettingsPage() {
                             />
                         </div>
 
-                        <div style={{ marginTop: 16 }}>
-                            <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12 }}>SMTP Configuration</h4>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label htmlFor="smtp-host">SMTP Host</label>
-                                    <input
-                                        id="smtp-host"
-                                        type="text"
-                                        placeholder="smtp.gmail.com"
-                                        value={settings.smtp_host}
-                                        onChange={(e) => updateSetting('smtp_host', e.target.value)}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="smtp-port">Port</label>
-                                    <input
-                                        id="smtp-port"
-                                        type="text"
-                                        placeholder="587"
-                                        value={settings.smtp_port}
-                                        onChange={(e) => updateSetting('smtp_port', e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="form-row" style={{ marginTop: 12 }}>
-                                <div className="form-group">
-                                    <label htmlFor="smtp-user">Username</label>
-                                    <input
-                                        id="smtp-user"
-                                        type="text"
-                                        placeholder="your@gmail.com"
-                                        value={settings.smtp_user}
-                                        onChange={(e) => updateSetting('smtp_user', e.target.value)}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="smtp-pass">Password / App Password</label>
-                                    <input
-                                        id="smtp-pass"
-                                        type="password"
-                                        placeholder="••••••••"
-                                        value={settings.smtp_pass}
-                                        onChange={(e) => updateSetting('smtp_pass', e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
-                            <button
-                                type="button"
-                                className="btn-secondary"
-                                onClick={handleTestEmail}
-                                disabled={testingEmail}
-                            >
-                                {testingEmail ? (
-                                    <><span className="spinner" style={{ width: 14, height: 14, marginRight: 6, verticalAlign: 'middle' }}></span>Sending...</>
-                                ) : '📨 Send Test Email'}
-                            </button>
-                        </div>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                            Emails will be sent using the global email server configured by the administrator.
+                        </p>
                     </div>
 
                     {/* Sync Preferences */}
