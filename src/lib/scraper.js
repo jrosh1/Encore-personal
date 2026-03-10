@@ -247,8 +247,19 @@ function parseEventsFromHtml(html, sourceUrl) {
                     .replace(datePatterns[2], '').replace(datePatterns[3], '').trim();
                 const parts = cleanText.split(/[,\n|•·–—-]+/).map(s => s.trim()).filter(Boolean);
 
+                // Try to extract an actual title from the element
+                const titleSelectors = ['h1', 'h2', 'h3', 'h4', '.title', '.name', '.headliner', 'strong', 'b'];
+                let extractedTitle = null;
+                for (const titleSel of titleSelectors) {
+                    const t = $(el).find(titleSel).first().text().trim().replace(/\s+/g, ' ');
+                    if (t && t.length > 2 && t.length < 100) {
+                        extractedTitle = t;
+                        break;
+                    }
+                }
+
                 events.push({
-                    title: 'Live Show',
+                    title: extractedTitle || 'Live Event',
                     venue: parts[0] || '',
                     city: parts[1] || '',
                     state: parts[2] || '',
