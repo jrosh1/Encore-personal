@@ -3,17 +3,18 @@ import { getSetting, getAllSettings } from './db.js';
 
 /**
  * Send a styled HTML email with new concert announcements.
+ * @param {string} userId - The authenticated user's ID
  * @param {Array} newEvents - Array of event objects with artist_name
  */
-export async function sendNewEventsEmail(newEvents) {
+export async function sendNewEventsEmail(userId, newEvents) {
+    if (!userId) throw new Error("userId required");
     if (!newEvents || newEvents.length === 0) return { sent: false, reason: 'No new events' };
 
-    const settings = getAllSettings();
-    const smtpHost = settings.smtp_host;
-    const smtpPort = settings.smtp_port || '587';
-    const smtpUser = settings.smtp_user;
-    const smtpPass = settings.smtp_pass;
-    const notifyEmail = settings.notification_email;
+    const smtpHost = await getSetting(userId, 'smtp_host');
+    const smtpPort = await getSetting(userId, 'smtp_port') || '587';
+    const smtpUser = await getSetting(userId, 'smtp_user');
+    const smtpPass = await getSetting(userId, 'smtp_pass');
+    const notifyEmail = await getSetting(userId, 'notification_email');
 
     if (!smtpHost || !smtpUser || !smtpPass || !notifyEmail) {
         return { sent: false, reason: 'Email not configured. Set SMTP credentials in Settings.' };
@@ -61,7 +62,7 @@ export async function sendNewEventsEmail(newEvents) {
         </table>
       </div>
       <div style="padding: 16px 24px; text-align: center; color: #666; font-size: 12px;">
-        Sent by your Concert Tracker • <a href="http://localhost:3000" style="color: #a78bfa;">Open Dashboard</a>
+        Sent by Encore • <a href="${process.env.NEXTAUTH_URL || 'https://encore-brown.vercel.app'}" style="color: #a78bfa;">Open Dashboard</a>
       </div>
     </div>
   `;
@@ -83,13 +84,14 @@ export async function sendNewEventsEmail(newEvents) {
 /**
  * Send a test email to verify SMTP configuration.
  */
-export async function sendTestEmail() {
-    const settings = getAllSettings();
-    const smtpHost = settings.smtp_host;
-    const smtpPort = settings.smtp_port || '587';
-    const smtpUser = settings.smtp_user;
-    const smtpPass = settings.smtp_pass;
-    const notifyEmail = settings.notification_email;
+export async function sendTestEmail(userId) {
+    if (!userId) throw new Error("userId required");
+
+    const smtpHost = await getSetting(userId, 'smtp_host');
+    const smtpPort = await getSetting(userId, 'smtp_port') || '587';
+    const smtpUser = await getSetting(userId, 'smtp_user');
+    const smtpPass = await getSetting(userId, 'smtp_pass');
+    const notifyEmail = await getSetting(userId, 'notification_email');
 
     if (!smtpHost || !smtpUser || !smtpPass || !notifyEmail) {
         return { sent: false, reason: 'Email not configured. Fill in all SMTP fields.' };
@@ -106,11 +108,11 @@ export async function sendTestEmail() {
         await transporter.sendMail({
             from: smtpUser,
             to: notifyEmail,
-            subject: '🎵 Concert Tracker — Test Email',
+            subject: '🎵 Encore — Test Email',
             html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 500px; margin: 0 auto; background: #1a1a2e; border-radius: 12px; padding: 32px; text-align: center;">
           <h1 style="color: #a78bfa; margin: 0;">✅ Email Works!</h1>
-          <p style="color: #e0e0e0; margin-top: 16px;">Your Concert Tracker email notifications are configured correctly.</p>
+          <p style="color: #e0e0e0; margin-top: 16px;">Your Encore email notifications are configured correctly.</p>
         </div>
       `,
         });
