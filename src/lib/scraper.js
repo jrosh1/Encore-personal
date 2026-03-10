@@ -248,7 +248,11 @@ function parseEventsFromHtml(html, sourceUrl) {
                 const parts = cleanText.split(/[,\n|•·–—-]+/).map(s => s.trim()).filter(Boolean);
 
                 // Try to extract an actual title from the element
-                const titleSelectors = ['h1', 'h2', 'h3', 'h4', '.title', '.name', '.headliner', 'strong', 'b'];
+                const titleSelectors = [
+                    'h1', 'h2', 'h3', 'h4', '.title', '.name', '.headliner',
+                    '.event-name', '.event-title', 'a.title', 'span.title',
+                    '[itemprop="name"]', '.summary', 'strong', 'b'
+                ];
                 let extractedTitle = null;
                 for (const titleSel of titleSelectors) {
                     const t = $(el).find(titleSel).first().text().trim().replace(/\s+/g, ' ');
@@ -256,6 +260,20 @@ function parseEventsFromHtml(html, sourceUrl) {
                         extractedTitle = t;
                         break;
                     }
+                }
+
+                // Fallback: The biggest or first link in the event container is usually the artist name
+                if (!extractedTitle) {
+                    const firstLinkText = $(el).find('a').first().text().trim().replace(/\s+/g, ' ');
+                    if (firstLinkText && firstLinkText.length > 2 && firstLinkText.length < 100) {
+                        extractedTitle = firstLinkText;
+                    }
+                }
+
+                // Final fallback: if we STILL don't have a title, just take the first meaningful line of text
+                if (!extractedTitle) {
+                    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+                    if (lines.length > 0) extractedTitle = lines[0];
                 }
 
                 events.push({
