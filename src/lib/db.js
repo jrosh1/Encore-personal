@@ -222,3 +222,16 @@ export async function removeVenue(userId, id) {
   if (!userId) throw new Error("userId required");
   await prisma.venue.deleteMany({ where: { id: parseInt(id), userId } });
 }
+
+export async function editVenue(userId, id, { name, website_url, city, state, country }) {
+  if (!userId) throw new Error("userId required");
+  
+  // We use updateMany because we need to filter by userId to ensure they own the venue
+  const res = await prisma.venue.updateMany({
+    where: { id: parseInt(id), userId },
+    data: { name, website_url, city, state, country: country || 'US' }
+  });
+  
+  if (res.count === 0) throw new Error("Venue not found or unauthorized");
+  return true;
+}

@@ -54,3 +54,30 @@ export async function DELETE(request) {
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
 }
+
+export async function PUT(request) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const userId = session.user.id;
+
+        const { id, name, website_url, city, state, country } = await request.json();
+        if (!id || !name || !website_url) {
+            return NextResponse.json({ error: 'ID, Name, and website URL are required' }, { status: 400 });
+        }
+
+        const { editVenue } = await import('@/lib/db');
+        await editVenue(userId, id, { name, website_url, city, state, country });
+        
+        return NextResponse.json({
+            success: true,
+            venue: { id, name, website_url, city, state, country },
+            message: `Updated ${name}`,
+        });
+    } catch (err) {
+        if (err.message?.includes('P2002')) {
+            return NextResponse.json({ error: 'Venue with this URL already exists' }, { status: 409 });
+        }
+        return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+}

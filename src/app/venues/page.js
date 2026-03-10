@@ -14,6 +14,7 @@ export default function VenuesPage() {
     const [venues, setVenues] = useState([]);
     const [loading, setLoading] = useState(true);
     const [adding, setAdding] = useState(false);
+    const [editingId, setEditingId] = useState(null);
     const [toast, setToast] = useState(null);
     const [form, setForm] = useState({ name: '', website_url: '', city: '', state: '', country: 'US' });
 
@@ -31,30 +32,50 @@ export default function VenuesPage() {
 
     useEffect(() => { fetchVenues(); }, [fetchVenues]);
 
-    const handleAdd = async (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         if (!form.name.trim() || !form.website_url.trim()) return;
 
         setAdding(true);
+        const isEditing = editingId !== null;
+        
         try {
             const res = await fetch('/api/venues', {
-                method: 'POST',
+                method: isEditing ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(form),
+                body: JSON.stringify(isEditing ? { id: editingId, ...form } : form),
             });
             const data = await res.json();
             if (res.ok) {
-                showToast(`Added ${data.venue?.name}!`, 'success');
+                showToast(data.message || (isEditing ? 'Venue updated!' : `Added ${data.venue?.name}!`), 'success');
                 setForm({ name: '', website_url: '', city: '', state: '', country: 'US' });
+                setEditingId(null);
                 fetchVenues();
             } else {
-                showToast(data.error || 'Failed to add venue', 'error');
+                showToast(data.error || (isEditing ? 'Failed to update venue' : 'Failed to add venue'), 'error');
             }
         } catch (err) {
             showToast('Error: ' + err.message, 'error');
         } finally {
             setAdding(false);
         }
+    };
+    
+    const startEditing = (venue) => {
+        setEditingId(venue.id);
+        setForm({
+            name: venue.name,
+            website_url: venue.website_url,
+            city: venue.city || '',
+            state: venue.state || '',
+            country: venue.country || 'US',
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const cancelEditing = () => {
+        setEditingId(null);
+        setForm({ name: '', website_url: '', city: '', state: '', country: 'US' });
     };
 
     const handleQuickAdd = async (venue) => {
@@ -115,9 +136,9 @@ export default function VenuesPage() {
                 <p>Track specific concert venues to pull their full schedules</p>
             </div>
 
-            {/* Add venue form */}
-            <form className="card" onSubmit={handleAdd} style={{ marginBottom: 24, padding: 20 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Add a Venue</h3>
+            {/* Add/Edit venue form */}
+            <form className="card" onSubmit={handleSubmit} style={{ marginBottom: 24, padding: 20 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>{editingId ? 'Edit Venue' : 'Add a Venue'}</h3>
                 <div className="form-row" style={{ gap: 12 }}>
                     <div className="form-group" style={{ flex: 2 }}>
                         <label>Venue Name</label>
@@ -168,13 +189,24 @@ export default function VenuesPage() {
                             onChange={e => setForm(p => ({ ...p, country: e.target.value }))}
                         />
                     </div>
+                    {editingId && (
+                        <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={cancelEditing}
+                            disabled={adding}
+                            style={{ alignSelf: 'flex-end', whiteSpace: 'nowrap', marginRight: 8 }}
+                        >
+                            Cancel
+                        </button>
+                    )}
                     <button
                         type="submit"
                         className="btn-primary"
                         disabled={adding || !form.name.trim() || !form.website_url.trim()}
                         style={{ alignSelf: 'flex-end', whiteSpace: 'nowrap' }}
                     >
-                        {adding ? 'Adding...' : '+ Add Venue'}
+                        {adding ? 'Saving...' : (editingId ? 'Save Changes' : '+ Add Venue')}
                     </button>
                 </div>
             </form>
@@ -228,6 +260,23 @@ export default function VenuesPage() {
                                 >
                                     Schedule →
                                 </a>
+                                <button
+                                    className="edit-btn"
+                                    onClick={() => startEditing(venue)}
+                                    style={{
+                                        background: 'transparent',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-color)',
+                                        padding: '6px 14px',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: 13,
+                                        fontWeight: 500,
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                >
+                                    Edit
+                                </button>
                                 <button
                                     className="remove-btn"
                                     onClick={() => handleRemove(venue.id, venue.name)}
