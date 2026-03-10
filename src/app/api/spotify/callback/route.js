@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { exchangeCode } from '@/lib/spotify';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { headers } from 'next/headers';
 
 /**
  * GET — OAuth callback from Spotify.
@@ -28,8 +29,11 @@ export async function GET(request) {
             return NextResponse.redirect(new URL('/settings?spotify=error&msg=not_authenticated', request.url));
         }
 
-        const url = new URL(request.url);
-        const redirectUri = `${url.origin}/api/spotify/callback`;
+        const headersList = headers();
+        const host = headersList.get('host');
+        const proto = headersList.get('x-forwarded-proto') || 'https';
+        const origin = process.env.NEXTAUTH_URL || `${proto}://${host}`;
+        const redirectUri = `${origin}/api/spotify/callback`;
 
         await exchangeCode(userId, code, redirectUri);
 

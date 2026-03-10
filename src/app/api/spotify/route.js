@@ -3,6 +3,7 @@ import { getSetting, setSetting } from '@/lib/db';
 import { getAuthUrl, exchangeCode, isSpotifyConnected } from '@/lib/spotify';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { headers } from 'next/headers';
 
 /**
  * GET — returns Spotify auth URL or connection status
@@ -25,9 +26,12 @@ export async function GET(request) {
             });
         }
 
-        // Generate auth URL — use actual origin so it works on both localhost and Vercel
-        const url = new URL(request.url);
-        const redirectUri = `${url.origin}/api/spotify/callback`;
+        // Generate auth URL — use headers to get the real public origin
+        const headersList = headers();
+        const host = headersList.get('host');
+        const proto = headersList.get('x-forwarded-proto') || 'https';
+        const origin = process.env.NEXTAUTH_URL || `${proto}://${host}`;
+        const redirectUri = `${origin}/api/spotify/callback`;
         const authUrl = await getAuthUrl(userId, redirectUri);
 
         return NextResponse.json({ authUrl });
