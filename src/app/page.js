@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -15,6 +15,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [toast, setToast] = useState(null);
+    const [locationFilter, setLocationFilter] = useState('all');
 
     const fetchData = useCallback(async () => {
         try {
@@ -29,20 +30,6 @@ export default function Dashboard() {
 
             setEvents(eventsData.events || []);
             setArtists(artistsData.artists || []);
-
-            // Upcoming: next 5 future events, deduplicated by artist+date
-            const today = new Date().toISOString().split('T')[0];
-            const seen = new Set();
-            const upcoming = (eventsData.events || [])
-                .filter(e => {
-                    if (e.date < today) return false;
-                    const key = `${e.artist_name}-${e.date}`;
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                })
-                .slice(0, 5);
-            setUpcomingEvents(upcoming);
         } catch (err) {
             console.error('Error fetching data:', err);
         } finally {
@@ -53,6 +40,47 @@ export default function Dashboard() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Build unique location options from events
+    const locationOptions = useMemo(() => {
+        const locs = new Map();
+        for (const e of events) {
+            if (e.city || e.state) {
+                const label = [e.city, e.state].filter(Boolean).join(', ');
+                const key = label.toLowerCase();
+                if (!locs.has(key)) {
+                    locs.set(key, label);
+                }
+            }
+        }
+        return [...locs.entries()]
+            .sort((a, b) => a[1].localeCompare(b[1]))
+            .map(([key, label]) => ({ key, label }));
+    }, [events]);
+
+    // Filter events by location
+    const filteredEvents = useMemo(() => {
+        if (locationFilter === 'all') return events;
+        return events.filter(e => {
+            const label = [e.city, e.state].filter(Boolean).join(', ').toLowerCase();
+            return label === locationFilter;
+        });
+    }, [events, locationFilter]);
+
+    // Derive upcoming events from filtered events
+    const filteredUpcoming = useMemo(() => {
+        const today = new Date().toISOString().split('T')[0];
+        const seen = new Set();
+        return filteredEvents
+            .filter(e => {
+                if (e.date < today) return false;
+                const key = `${e.artist_name}-${e.date}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .slice(0, 5);
+    }, [filteredEvents]);
 
     const handleSync = async () => {
         setSyncing(true);
@@ -106,9 +134,9 @@ export default function Dashboard() {
         calendarDays.push({ day: d, otherMonth: true, date: formatDate(year, month + 1, d) });
     }
 
-    // Group events by date for the calendar, deduplicated by artist per day
+    // Group filtered events by date for the calendar, deduplicated by artist per day
     const eventsByDate = {};
-    for (const event of events) {
+    for (const event of filteredEvents) {
         if (!eventsByDate[event.date]) eventsByDate[event.date] = [];
         // Only add if this artist isn't already on this day
         const alreadyListed = eventsByDate[event.date].some(e => e.artist_name === event.artist_name);
@@ -123,8 +151,8 @@ export default function Dashboard() {
 
     const totalArtists = artists.length;
     const totalMembers = artists.reduce((sum, a) => sum + (a.members?.length || 0), 0);
-    const futureEvents = events.filter(e => e.date >= today.toISOString().split('T')[0]).length;
-    const sources = [...new Set(events.map(e => e.source))].length;
+    const futureEvents = filteredEvents.filter(e => e.date >= today.toISOString().split('T')[0]).length;
+    const sources = [...new Set(filteredEvents.map(e => e.source))].length;
 
     if (loading) {
         return (
@@ -185,6 +213,27 @@ export default function Dashboard() {
                 <div className="calendar-header">
                     <h3>Event Calendar</h3>
                     <div className="calendar-nav">
+                        {locationOptions.length > 0 && (
+                            <select
+                                value={locationFilter}
+                                onChange={(e) => setLocationFilter(e.target.value)}
+                                style={{
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 6,
+                                    padding: '6px 10px',
+                                    fontSize: 13,
+                                    marginRight: 8,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <option value="all">📍 All Locations</option>
+                                {locationOptions.map(loc => (
+                                    <option key={loc.key} value={loc.key}>{loc.label}</option>
+                                ))}
+                            </select>
+                        )}
                         <button onClick={prevMonth}>← Prev</button>
                         <span className="current-month">{MONTHS[month]} {year}</span>
                         <button onClick={nextMonth}>Next →</button>
@@ -226,16 +275,23 @@ export default function Dashboard() {
 
             {/* Upcoming events list */}
             <div style={{ marginTop: 32 }}>
-                <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Next Up</h3>
-                {upcomingEvents.length === 0 ? (
+                <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
+                    Next Up
+                    {locationFilter !== 'all' && (
+                        <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>
+                            in {locationOptions.find(l => l.key === locationFilter)?.label}
+                        </span>
+                    )}
+                </h3>
+                {filteredUpcoming.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-icon">📅</div>
-                        <h3>No upcoming events</h3>
-                        <p>Add some artists to start tracking their shows, then sync to fetch events.</p>
+                        <h3>No upcoming events{locationFilter !== 'all' ? ' in this location' : ''}</h3>
+                        <p>{locationFilter !== 'all' ? 'Try selecting a different location or "All Locations".' : 'Add some artists to start tracking their shows, then sync to fetch events.'}</p>
                     </div>
                 ) : (
                     <div className="event-list">
-                        {upcomingEvents.map((event, i) => {
+                        {filteredUpcoming.map((event, i) => {
                             const d = new Date(event.date + 'T00:00:00');
                             return (
                                 <a
