@@ -25,9 +25,9 @@ export async function GET(request) {
             });
         }
 
-        // Generate auth URL — Spotify requires 127.0.0.1 not localhost
+        // Generate auth URL — use actual origin so it works on both localhost and Vercel
         const url = new URL(request.url);
-        const redirectUri = `http://127.0.0.1:${url.port || 3000}/api/spotify/callback`;
+        const redirectUri = `${url.origin}/api/spotify/callback`;
         const authUrl = await getAuthUrl(userId, redirectUri);
 
         return NextResponse.json({ authUrl });

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { exchangeCode } from '@/lib/spotify';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
 /**
  * GET — OAuth callback from Spotify.
@@ -7,6 +9,9 @@ import { exchangeCode } from '@/lib/spotify';
  */
 export async function GET(request) {
     try {
+        const session = await getServerSession(authOptions);
+        const userId = session?.user?.id;
+
         const { searchParams } = new URL(request.url);
         const code = searchParams.get('code');
         const error = searchParams.get('error');
@@ -19,10 +24,14 @@ export async function GET(request) {
             return NextResponse.redirect(new URL('/settings?spotify=error&msg=no_code', request.url));
         }
 
-        const url = new URL(request.url);
-        const redirectUri = `http://127.0.0.1:${url.port || 3000}/api/spotify/callback`;
+        if (!userId) {
+            return NextResponse.redirect(new URL('/settings?spotify=error&msg=not_authenticated', request.url));
+        }
 
-        await exchangeCode(code, redirectUri);
+        const url = new URL(request.url);
+        const redirectUri = `${url.origin}/api/spotify/callback`;
+
+        await exchangeCode(userId, code, redirectUri);
 
         // Redirect to import page on success
         return NextResponse.redirect(new URL('/import?spotify=connected', request.url));
