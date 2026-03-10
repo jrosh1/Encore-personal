@@ -210,6 +210,7 @@ function parseEventsFromHtml(html, sourceUrl) {
 
     const eventSelectors = [
         '.event', '.tour-date', '.show', '.concert', '.gig',
+        '.tw-cal-event', // Used by TicketWeb/Stubbs
         '[class*="event"]', '[class*="tour"]', '[class*="show"]',
         '.dates li', '.tour-dates li', '.events-list li',
         'table.tour tr', 'table.dates tr', '.schedule-item',
@@ -250,6 +251,7 @@ function parseEventsFromHtml(html, sourceUrl) {
                 // Try to extract an actual title from the element
                 const titleSelectors = [
                     'h1', 'h2', 'h3', 'h4', '.title', '.name', '.headliner',
+                    '.tw-name', '.tw-name a', // TicketWeb / Stubbs
                     '.event-name', '.event-title', 'a.title', 'span.title',
                     '[itemprop="name"]', '.summary', 'strong', 'b'
                 ];
@@ -262,12 +264,15 @@ function parseEventsFromHtml(html, sourceUrl) {
                     }
                 }
 
-                // Fallback: The biggest or first link in the event container is usually the artist name
+                // Fallback: The first link in the event container that actually has text
                 if (!extractedTitle) {
-                    const firstLinkText = $(el).find('a').first().text().trim().replace(/\s+/g, ' ');
-                    if (firstLinkText && firstLinkText.length > 2 && firstLinkText.length < 100) {
-                        extractedTitle = firstLinkText;
-                    }
+                    $(el).find('a').each((_, aEl) => {
+                        const linkText = $(aEl).text().trim().replace(/\s+/g, ' ');
+                        if (linkText && linkText.length > 2 && linkText.length < 100) {
+                            extractedTitle = linkText;
+                            return false; // break the each loop
+                        }
+                    });
                 }
 
                 // Clean up the final extractedTitle to just the first line (Removes "Live Show\nDate\nArtist" multi-line garbage)
@@ -291,15 +296,38 @@ function parseEventsFromHtml(html, sourceUrl) {
         });
     }
 
-    // Deduplicate by date + venue
-    const seen = new Set();
-    return events.filter(e => {
-        if (!e.date) return false;
-        const key = `${e.date}-${e.venue}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
+    // Group by date to handle generics and duplicates properly
+    const eventsByDate = new Map();
+    for (const e of events) {
+        if (!e.date) continue;
+        if (!eventsByDate.has(e.date)) eventsByDate.set(e.date, []);
+        eventsByDate.get(e.date).push(e);
+    }
+
+    const finalEvents = [];
+    for (const [date, dateEvents] of eventsByDate.entries()) {
+        const specificEvents = dateEvents.filter(e => {
+            const t = e.title.toLowerCase();
+            return !t.includes('live event') && !t.includes('live show') && t !== '';
+        });
+        
+        if (specificEvents.length > 0) {
+            // Deduplicate specific events by title
+            const seenTitles = new Set();
+            for (const e of specificEvents) {
+                const titleKey = e.title.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+                if (!seenTitles.has(titleKey)) {
+                    seenTitles.add(titleKey);
+                    finalEvents.push(e);
+                }
+            }
+        } else {
+            // Only generic events exist for this date, keep the first one
+            if (dateEvents.length > 0) finalEvents.push(dateEvents[0]);
+        }
+    }
+
+    return finalEvents;
 }
 
 /**

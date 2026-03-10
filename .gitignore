@@ -13,3 +13,4 @@ build/
 src/data/*.db
 src/data/*.db-journal
 .vercel
+.env.vercel
