@@ -303,22 +303,50 @@ export default function Dashboard() {
                             className={`calendar-day ${d.otherMonth ? 'other-month' : ''} ${d.isToday ? 'today' : ''}`}
                         >
                             <div className="day-number">{d.day}</div>
-                            {(eventsByDate[d.date] || []).slice(0, 3).map((event, j) => (
-                                <a
-                                    key={j}
-                                    className={`calendar-event ${event.isVenueEvent ? 'source-venue-calendar' : `source-${event.source}`}`}
-                                    href={event.source_url || '#'}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title={`${event.artist_name} — ${event.venue || 'TBA'}, ${event.city || ''}`}
-                                    style={event.isVenueEvent ? { opacity: 0.7, fontStyle: 'italic' } : {}}
-                                >
-                                    {event.artist_name}
-                                </a>
-                            ))}
+                            
+                            {/* Base visible events (max 3) */}
+                            <div className="events-container">
+                                {(eventsByDate[d.date] || []).slice(0, 3).map((event, j) => (
+                                    <a
+                                        key={j}
+                                        className={`calendar-event ${event.isVenueEvent ? 'source-venue-calendar' : `source-${event.source}`}`}
+                                        href={event.source_url || '#'}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={`${event.artist_name} — ${event.venue || 'TBA'}, ${event.city || ''}`}
+                                        style={event.isVenueEvent ? { opacity: 0.7, fontStyle: 'italic' } : {}}
+                                    >
+                                        {event.artist_name}
+                                    </a>
+                                ))}
+                            </div>
+
+                            {/* +X more indicator */}
                             {(eventsByDate[d.date] || []).length > 3 && (
-                                <div style={{ fontSize: 10, color: 'var(--text-muted)', paddingLeft: 6 }}>
+                                <div className="more-indicator" style={{ fontSize: 10, color: 'var(--text-muted)', paddingLeft: 6, cursor: 'pointer' }}>
                                     +{eventsByDate[d.date].length - 3} more
+                                </div>
+                            )}
+
+                            {/* Hover overlay for all events */}
+                            {(eventsByDate[d.date] || []).length > 3 && (
+                                <div className="events-overlay">
+                                    <div className="events-overlay-header">All Events ({eventsByDate[d.date].length})</div>
+                                    <div className="events-overlay-scroll">
+                                        {(eventsByDate[d.date] || []).map((event, j) => (
+                                            <a
+                                                key={j}
+                                                className={`calendar-event ${event.isVenueEvent ? 'source-venue-calendar' : `source-${event.source}`}`}
+                                                href={event.source_url || '#'}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                title={`${event.artist_name} — ${event.venue || 'TBA'}, ${event.city || ''}`}
+                                                style={{ ...(event.isVenueEvent ? { opacity: 0.7, fontStyle: 'italic' } : {}), marginBottom: 4 }}
+                                            >
+                                                {event.artist_name} <span style={{opacity: 0.5, fontSize: 10}}>@ {event.venue}</span>
+                                            </a>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>

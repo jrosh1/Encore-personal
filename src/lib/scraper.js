@@ -270,10 +270,10 @@ function parseEventsFromHtml(html, sourceUrl) {
                     }
                 }
 
-                // Final fallback: if we STILL don't have a title, just take the first meaningful line of text
-                if (!extractedTitle) {
-                    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-                    if (lines.length > 0) extractedTitle = lines[0];
+                // Clean up the final extractedTitle to just the first line (Removes "Live Show\nDate\nArtist" multi-line garbage)
+                if (extractedTitle) {
+                    extractedTitle = extractedTitle.split(/[\n|•·]+/).map(s => s.trim()).filter(Boolean)[0];
+                    if (extractedTitle.length > 100) extractedTitle = extractedTitle.substring(0, 100) + '...';
                 }
 
                 events.push({

@@ -398,6 +398,56 @@ body {
   transform: translateX(2px);
 }
 
+/* Event Tooltip / Overlay */
+.events-overlay {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 180px;
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-glow);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glow);
+  z-index: 100;
+  padding: 8px;
+  margin-top: 4px;
+}
+
+.calendar-day:hover .events-overlay {
+  display: block;
+  animation: fadeIn 0.15s ease-out forwards;
+}
+
+.events-overlay-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.events-overlay-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.events-overlay-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.events-overlay-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .calendar-event.source-website {
   background: rgba(45, 212, 191, 0.2);
   border-left-color: var(--success);
