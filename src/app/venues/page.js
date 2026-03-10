@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 
 const POPULAR_VENUES = [
-    { name: 'Red Rocks Amphitheatre', website_url: 'https://www.redrocksonline.com/concerts-events/', city: 'Morrison', state: 'CO' },
-    { name: 'Madison Square Garden', website_url: 'https://www.msg.com/calendar', city: 'New York', state: 'NY' },
+    { name: 'Red Rocks Amphitheatre', website_url: 'https://www.redrocksonline.com/events/', city: 'Morrison', state: 'CO' },
+    { name: 'Madison Square Garden', website_url: 'https://www.msg.com/calendar?category=music', city: 'New York', state: 'NY' },
     { name: 'The Gorge Amphitheatre', website_url: 'https://www.georgeamphitheatre.com/events', city: 'George', state: 'WA' },
     { name: 'Hollywood Bowl', website_url: 'https://www.hollywoodbowl.com/events/performances', city: 'Los Angeles', state: 'CA' },
     { name: 'Radio City Music Hall', website_url: 'https://www.msg.com/radio-city-music-hall/calendar', city: 'New York', state: 'NY' },
