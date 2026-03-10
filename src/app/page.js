@@ -15,7 +15,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [toast, setToast] = useState(null);
-    const [locationFilter, setLocationFilter] = useState('all');
+    const [locationFilter, setLocationFilter] = useState('');
 
     const fetchData = useCallback(async () => {
         try {
@@ -41,29 +41,13 @@ export default function Dashboard() {
         fetchData();
     }, [fetchData]);
 
-    // Build unique location options from events
-    const locationOptions = useMemo(() => {
-        const locs = new Map();
-        for (const e of events) {
-            if (e.city || e.state) {
-                const label = [e.city, e.state].filter(Boolean).join(', ');
-                const key = label.toLowerCase();
-                if (!locs.has(key)) {
-                    locs.set(key, label);
-                }
-            }
-        }
-        return [...locs.entries()]
-            .sort((a, b) => a[1].localeCompare(b[1]))
-            .map(([key, label]) => ({ key, label }));
-    }, [events]);
-
-    // Filter events by location
+    // Filter events by location search text
     const filteredEvents = useMemo(() => {
-        if (locationFilter === 'all') return events;
+        const query = locationFilter.trim().toLowerCase();
+        if (!query) return events;
         return events.filter(e => {
-            const label = [e.city, e.state].filter(Boolean).join(', ').toLowerCase();
-            return label === locationFilter;
+            const loc = [e.city, e.state, e.country].filter(Boolean).join(', ').toLowerCase();
+            return loc.includes(query);
         });
     }, [events, locationFilter]);
 
@@ -213,8 +197,10 @@ export default function Dashboard() {
                 <div className="calendar-header">
                     <h3>Event Calendar</h3>
                     <div className="calendar-nav">
-                        {locationOptions.length > 0 && (
-                            <select
+                        <div style={{ position: 'relative', marginRight: 8 }}>
+                            <input
+                                type="text"
+                                placeholder="📍 Filter by city or state..."
                                 value={locationFilter}
                                 onChange={(e) => setLocationFilter(e.target.value)}
                                 style={{
@@ -224,16 +210,27 @@ export default function Dashboard() {
                                     borderRadius: 6,
                                     padding: '6px 10px',
                                     fontSize: 13,
-                                    marginRight: 8,
-                                    cursor: 'pointer',
+                                    width: 200,
                                 }}
-                            >
-                                <option value="all">📍 All Locations</option>
-                                {locationOptions.map(loc => (
-                                    <option key={loc.key} value={loc.key}>{loc.label}</option>
-                                ))}
-                            </select>
-                        )}
+                            />
+                            {locationFilter && (
+                                <button
+                                    onClick={() => setLocationFilter('')}
+                                    style={{
+                                        position: 'absolute',
+                                        right: 6,
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--text-muted)',
+                                        cursor: 'pointer',
+                                        fontSize: 14,
+                                        padding: '0 4px',
+                                    }}
+                                >×</button>
+                            )}
+                        </div>
                         <button onClick={prevMonth}>← Prev</button>
                         <span className="current-month">{MONTHS[month]} {year}</span>
                         <button onClick={nextMonth}>Next →</button>
@@ -277,17 +274,17 @@ export default function Dashboard() {
             <div style={{ marginTop: 32 }}>
                 <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
                     Next Up
-                    {locationFilter !== 'all' && (
+                    {locationFilter && (
                         <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>
-                            in {locationOptions.find(l => l.key === locationFilter)?.label}
+                            matching "{locationFilter}"
                         </span>
                     )}
                 </h3>
                 {filteredUpcoming.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-icon">📅</div>
-                        <h3>No upcoming events{locationFilter !== 'all' ? ' in this location' : ''}</h3>
-                        <p>{locationFilter !== 'all' ? 'Try selecting a different location or "All Locations".' : 'Add some artists to start tracking their shows, then sync to fetch events.'}</p>
+                        <h3>No upcoming events{locationFilter ? ' matching that location' : ''}</h3>
+                        <p>{locationFilter ? 'Try a different search or clear the filter.' : 'Add some artists to start tracking their shows, then sync to fetch events.'}</p>
                     </div>
                 ) : (
                     <div className="event-list">
