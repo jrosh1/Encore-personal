@@ -136,16 +136,6 @@ export async function syncAllArtists(userId) {
         const mainResult = await syncArtistEvents(userId, artist);
         totalNew += mainResult.newEvents;
         totalEvents += mainResult.totalEvents;
-
-        if (artist.members) {
-            for (const member of artist.members) {
-                const urls = await prisma.artistUrl.findMany({ where: { artist_id: member.id } });
-                const memberWithUrls = { ...member, urls };
-                const memberResult = await syncArtistEvents(userId, memberWithUrls);
-                totalNew += memberResult.newEvents;
-                totalEvents += memberResult.totalEvents;
-            }
-        }
     }
 
     try {
