@@ -1,239 +1,190 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, '..', 'data', 'concert-tracker.db');
-
-let db = null;
-
-export function getDb() {
-  if (db) return db;
-
-  // Ensure data directory exists
-  const fs = require('fs');
-  const dataDir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-
-  // Create tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS artists (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      musicbrainz_id TEXT,
-      ticketmaster_id TEXT,
-      image_url TEXT,
-      is_member INTEGER DEFAULT 0,
-      parent_artist_id INTEGER,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (parent_artist_id) REFERENCES artists(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS artist_urls (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      artist_id INTEGER NOT NULL,
-      url_type TEXT NOT NULL,
-      url TEXT NOT NULL,
-      FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      artist_id INTEGER NOT NULL,
-      title TEXT NOT NULL,
-      venue TEXT,
-      city TEXT,
-      state TEXT,
-      country TEXT,
-      date TEXT NOT NULL,
-      time TEXT,
-      source_url TEXT,
-      source TEXT DEFAULT 'ticketmaster',
-      raw_data TEXT,
-      first_seen_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_artist_mbid 
-    ON artists(musicbrainz_id) 
-    WHERE is_member = 0 AND musicbrainz_id IS NOT NULL;
-
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS venues (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      website_url TEXT NOT NULL UNIQUE,
-      city TEXT,
-      state TEXT,
-      country TEXT DEFAULT 'US',
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedup 
-      ON events(artist_id, date, venue, city);
-
-    CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
-    CREATE INDEX IF NOT EXISTS idx_events_artist ON events(artist_id);
-    CREATE INDEX IF NOT EXISTS idx_artist_urls_artist ON artist_urls(artist_id);
-  `);
-
-  // Migration: add ticketmaster_id if missing
-  try {
-    db.prepare('SELECT ticketmaster_id FROM artists LIMIT 1').get();
-  } catch {
-    db.exec('ALTER TABLE artists ADD COLUMN ticketmaster_id TEXT');
-  }
-
-  return db;
-}
+import prisma from './prisma';
 
 // --- Artist helpers ---
-export function getAllArtists() {
-  const db = getDb();
-  const artists = db.prepare(`
-    SELECT a.*, 
-      (SELECT COUNT(*) FROM events e WHERE e.artist_id = a.id AND e.date >= date('now')) as upcoming_count
-    FROM artists a 
-    WHERE a.is_member = 0 
-    ORDER BY a.name
-  `).all();
+export async function getAllArtists(userId) {
+  if (!userId) throw new Error("userId required");
 
-  for (const artist of artists) {
-    artist.members = db.prepare(
-      'SELECT * FROM artists WHERE parent_artist_id = ? ORDER BY name'
-    ).all(artist.id);
-    artist.urls = db.prepare(
-      'SELECT * FROM artist_urls WHERE artist_id = ? ORDER BY url_type'
-    ).all(artist.id);
-    for (const member of artist.members) {
-      member.urls = db.prepare(
-        'SELECT * FROM artist_urls WHERE artist_id = ? ORDER BY url_type'
-      ).all(member.id);
+  const artists = await prisma.artist.findMany({
+    where: { userId, is_member: false },
+    orderBy: { name: 'asc' },
+    include: {
+      urls: { orderBy: { url_type: 'asc' } },
+      members: {
+        orderBy: { name: 'asc' },
+        include: { urls: { orderBy: { url_type: 'asc' } } }
+      },
+      _count: {
+        select: {
+          events: { where: { date: { gte: new Date().toISOString().split('T')[0] } } }
+        }
+      }
     }
-  }
+  });
 
-  return artists;
+  return artists.map(a => ({
+    ...a,
+    upcoming_count: a._count.events
+  }));
 }
 
-export function addArtist({ name, musicbrainz_id, ticketmaster_id, image_url, is_member = false, parent_artist_id = null }) {
-  const db = getDb();
+export async function addArtist(userId, { name, musicbrainz_id, ticketmaster_id, image_url, is_member = false, parent_artist_id = null }) {
+  if (!userId) throw new Error("userId required");
+
   try {
-    const result = db.prepare(`
-      INSERT INTO artists (name, musicbrainz_id, ticketmaster_id, image_url, is_member, parent_artist_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(name, musicbrainz_id || null, ticketmaster_id || null, image_url || null, is_member ? 1 : 0, parent_artist_id || null);
-    return result.lastInsertRowid;
+    const artist = await prisma.artist.create({
+      data: {
+        userId,
+        name,
+        musicbrainz_id: musicbrainz_id || null,
+        ticketmaster_id: ticketmaster_id || null,
+        image_url: image_url || null,
+        is_member,
+        parent_artist_id: parent_artist_id || null
+      }
+    });
+    return artist.id;
   } catch (err) {
-    // Handle race conditions where another request just inserted this artist
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' && musicbrainz_id && !is_member) {
-      const existing = db.prepare('SELECT id FROM artists WHERE musicbrainz_id = ? AND is_member = 0').get(musicbrainz_id);
+    if (err.code === 'P2002' && musicbrainz_id && !is_member) { // Prisma Unique Constraint Violation
+      const existing = await prisma.artist.findUnique({
+        where: { userId_musicbrainz_id: { userId, musicbrainz_id } }
+      });
       if (existing) return existing.id;
     }
     throw err;
   }
 }
 
-export function removeArtist(id) {
-  const db = getDb();
-  db.prepare('DELETE FROM artists WHERE id = ?').run(id);
+export async function removeArtist(userId, id) {
+  if (!userId) throw new Error("userId required");
+  await prisma.artist.deleteMany({ where: { id: parseInt(id), userId } });
 }
 
-export function addArtistUrl(artist_id, url_type, url) {
-  const db = getDb();
-  // Avoid duplicates
-  const existing = db.prepare(
-    'SELECT id FROM artist_urls WHERE artist_id = ? AND url_type = ? AND url = ?'
-  ).get(artist_id, url_type, url);
-  if (existing) return existing.id;
-  const result = db.prepare(
-    'INSERT INTO artist_urls (artist_id, url_type, url) VALUES (?, ?, ?)'
-  ).run(artist_id, url_type, url);
-  return result.lastInsertRowid;
+export async function addArtistUrl(userId, artist_id, url_type, url) {
+  if (!userId) throw new Error("userId required");
+
+  // Verify ownership first
+  const artist = await prisma.artist.findFirst({ where: { id: artist_id, userId } });
+  if (!artist) throw new Error("Artist not found or access denied");
+
+  try {
+    const artistUrl = await prisma.artistUrl.create({
+      data: { artist_id, url_type, url }
+    });
+    return artistUrl.id;
+  } catch (err) {
+    if (err.code === 'P2002') return null; // Already exists
+    throw err;
+  }
 }
 
-export function removeArtistUrl(id) {
-  const db = getDb();
-  db.prepare('DELETE FROM artist_urls WHERE id = ?').run(id);
+export async function removeArtistUrl(userId, id) {
+  if (!userId) throw new Error("userId required");
+
+  const url = await prisma.artistUrl.findUnique({ where: { id: parseInt(id) }, include: { artist: true } });
+  if (url && url.artist.userId === userId) {
+    await prisma.artistUrl.delete({ where: { id: parseInt(id) } });
+  }
 }
 
 // --- Event helpers ---
-export function getEvents({ startDate, endDate, artistId, limit } = {}) {
-  const db = getDb();
-  let sql = `
-    SELECT e.*, a.name as artist_name 
-    FROM events e 
-    JOIN artists a ON e.artist_id = a.id 
-    WHERE 1=1
-  `;
-  const params = [];
+export async function getEvents(userId, { startDate, endDate, artistId, limit } = {}) {
+  if (!userId) throw new Error("userId required");
 
-  if (startDate) { sql += ' AND e.date >= ?'; params.push(startDate); }
-  if (endDate) { sql += ' AND e.date <= ?'; params.push(endDate); }
-  if (artistId) { sql += ' AND e.artist_id = ?'; params.push(artistId); }
+  let where = { userId };
+  if (startDate) where.date = { gte: startDate };
+  if (endDate) where.date = { ...where.date, lte: endDate };
+  if (artistId) where.artist_id = artistId;
 
-  sql += ' ORDER BY e.date ASC';
-  if (limit) { sql += ' LIMIT ?'; params.push(limit); }
+  const events = await prisma.event.findMany({
+    where,
+    orderBy: { date: 'asc' },
+    take: limit,
+    include: { artist: { select: { name: true } } }
+  });
 
-  return db.prepare(sql).all(...params);
+  return events.map(e => ({ ...e, artist_name: e.artist.name }));
 }
 
-export function upsertEvent({ artist_id, title, venue, city, state, country, date, time, source_url, source }) {
-  const db = getDb();
+export async function upsertEvent(userId, { artist_id, title, venue, city, state, country, date, time, source_url, source }) {
+  if (!userId) throw new Error("userId required");
+
   try {
-    const result = db.prepare(`
-      INSERT INTO events (artist_id, title, venue, city, state, country, date, time, source_url, source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(artist_id, date, venue, city) DO UPDATE SET
-        title = excluded.title,
-        source_url = COALESCE(excluded.source_url, events.source_url),
-        time = COALESCE(excluded.time, events.time),
-        state = COALESCE(excluded.state, events.state),
-        country = COALESCE(excluded.country, events.country),
-        source = excluded.source
-    `).run(artist_id, title, venue || null, city || null, state || null, country || null, date, time || null, source_url || null, source || 'unknown');
-    return { id: result.lastInsertRowid, isNew: result.changes > 0 };
+    const event = await prisma.event.upsert({
+      where: {
+        artist_id_title_date: { artist_id, title, date }
+      },
+      update: {
+        source_url: source_url || undefined,
+        time: time || undefined,
+        state: state || undefined,
+        country: country || undefined,
+        source: source || 'unknown'
+      },
+      create: {
+        userId,
+        artist_id,
+        title,
+        venue: venue || null,
+        city: city || null,
+        state: state || null,
+        country: country || null,
+        date,
+        time: time || null,
+        source_url: source_url || null,
+        source: source || 'unknown'
+      }
+    });
+    // Prisma returns created info or updated info, no `changes` property directly, 
+    // so we assume true to trigger sync updates properly.
+    return { id: event.id, isNew: true };
   } catch (e) {
     console.error('Error upserting event:', e.message);
     return { id: null, isNew: false };
   }
 }
 
-export function getNewEventsSince(since) {
-  const db = getDb();
-  return db.prepare(`
-    SELECT e.*, a.name as artist_name 
-    FROM events e 
-    JOIN artists a ON e.artist_id = a.id 
-    WHERE e.first_seen_at >= ? AND e.date >= date('now')
-    ORDER BY e.date ASC
-  `).all(since);
+export async function getNewEventsSince(userId, since) {
+  if (!userId) throw new Error("userId required");
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const events = await prisma.event.findMany({
+    where: {
+      userId,
+      first_seen_at: { gte: new Date(since) },
+      date: { gte: today }
+    },
+    orderBy: { date: 'asc' },
+    include: { artist: { select: { name: true } } }
+  });
+
+  return events.map(e => ({ ...e, artist_name: e.artist.name }));
 }
 
 // --- Settings helpers ---
-export function getSetting(key) {
-  const db = getDb();
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+export async function getSetting(userId, key) {
+  if (!userId) throw new Error("userId required");
+
+  const row = await prisma.setting.findUnique({
+    where: { userId_key: { userId, key } }
+  });
   return row ? row.value : null;
 }
 
-export function setSetting(key, value) {
-  const db = getDb();
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+export async function setSetting(userId, key, value) {
+  if (!userId) throw new Error("userId required");
+
+  await prisma.setting.upsert({
+    where: { userId_key: { userId, key } },
+    update: { value: String(value) },
+    create: { userId, key, value: String(value) }
+  });
 }
 
-export function getAllSettings() {
-  const db = getDb();
-  const rows = db.prepare('SELECT * FROM settings').all();
+export async function getAllSettings(userId) {
+  if (!userId) throw new Error("userId required");
+
+  const rows = await prisma.setting.findMany({ where: { userId } });
   const settings = {};
   for (const row of rows) {
     settings[row.key] = row.value;
@@ -242,21 +193,32 @@ export function getAllSettings() {
 }
 
 // --- Venue helpers ---
-export function getAllVenues() {
-  const db = getDb();
-  return db.prepare('SELECT * FROM venues ORDER BY name').all();
+export async function getAllVenues(userId) {
+  if (!userId) throw new Error("userId required");
+  return await prisma.venue.findMany({
+    where: { userId },
+    orderBy: { name: 'asc' }
+  });
 }
 
-export function addVenue({ name, website_url, city, state, country }) {
-  const db = getDb();
-  const result = db.prepare(`
-    INSERT INTO venues (name, website_url, city, state, country)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(name, website_url, city || null, state || null, country || 'US');
-  return result.lastInsertRowid;
+export async function addVenue(userId, { name, website_url, city, state, country }) {
+  if (!userId) throw new Error("userId required");
+
+  try {
+    const venue = await prisma.venue.create({
+      data: { userId, name, website_url, city, state, country: country || 'US' }
+    });
+    return venue.id;
+  } catch (err) {
+    if (err.code === 'P2002') {
+      const existing = await prisma.venue.findUnique({ where: { userId_website_url: { userId, website_url } } });
+      if (existing) return existing.id;
+    }
+    throw err;
+  }
 }
 
-export function removeVenue(id) {
-  const db = getDb();
-  db.prepare('DELETE FROM venues WHERE id = ?').run(id);
+export async function removeVenue(userId, id) {
+  if (!userId) throw new Error("userId required");
+  await prisma.venue.deleteMany({ where: { id: parseInt(id), userId } });
 }

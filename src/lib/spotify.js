@@ -7,8 +7,9 @@ const API_BASE = 'https://api.spotify.com/v1';
 /**
  * Get the Spotify OAuth authorization URL.
  */
-export function getAuthUrl(redirectUri) {
-    const clientId = getSetting('spotify_client_id');
+export async function getAuthUrl(userId, redirectUri) {
+    if (!userId) throw new Error("userId required");
+    const clientId = await getSetting(userId, 'spotify_client_id');
     if (!clientId) throw new Error('Spotify Client ID not configured');
 
     const scopes = 'user-top-read user-follow-read';
@@ -26,9 +27,10 @@ export function getAuthUrl(redirectUri) {
 /**
  * Exchange an authorization code for access + refresh tokens.
  */
-export async function exchangeCode(code, redirectUri) {
-    const clientId = getSetting('spotify_client_id');
-    const clientSecret = getSetting('spotify_client_secret');
+export async function exchangeCode(userId, code, redirectUri) {
+    if (!userId) throw new Error("userId required");
+    const clientId = await getSetting(userId, 'spotify_client_id');
+    const clientSecret = await getSetting(userId, 'spotify_client_secret');
     if (!clientId || !clientSecret) throw new Error('Spotify credentials not configured');
 
     const res = await fetch(TOKEN_URL, {
@@ -52,9 +54,9 @@ export async function exchangeCode(code, redirectUri) {
     const data = await res.json();
 
     // Store tokens
-    setSetting('spotify_access_token', data.access_token);
-    setSetting('spotify_refresh_token', data.refresh_token);
-    setSetting('spotify_token_expiry', String(Date.now() + data.expires_in * 1000));
+    await setSetting(userId, 'spotify_access_token', data.access_token);
+    await setSetting(userId, 'spotify_refresh_token', data.refresh_token);
+    await setSetting(userId, 'spotify_token_expiry', String(Date.now() + data.expires_in * 1000));
 
     return data;
 }
@@ -62,15 +64,15 @@ export async function exchangeCode(code, redirectUri) {
 /**
  * Get a valid access token, refreshing if needed.
  */
-async function getAccessToken() {
-    let token = getSetting('spotify_access_token');
-    const expiry = parseInt(getSetting('spotify_token_expiry') || '0');
+async function getAccessToken(userId) {
+    let token = await getSetting(userId, 'spotify_access_token');
+    const expiry = parseInt(await getSetting(userId, 'spotify_token_expiry') || '0');
 
     if (Date.now() > expiry - 60000) {
         // Refresh the token
-        const refreshToken = getSetting('spotify_refresh_token');
-        const clientId = getSetting('spotify_client_id');
-        const clientSecret = getSetting('spotify_client_secret');
+        const refreshToken = await getSetting(userId, 'spotify_refresh_token');
+        const clientId = await getSetting(userId, 'spotify_client_id');
+        const clientSecret = await getSetting(userId, 'spotify_client_secret');
 
         if (!refreshToken || !clientId || !clientSecret) {
             throw new Error('Spotify not connected — please reconnect');
@@ -92,10 +94,10 @@ async function getAccessToken() {
 
         const data = await res.json();
         token = data.access_token;
-        setSetting('spotify_access_token', token);
-        setSetting('spotify_token_expiry', String(Date.now() + data.expires_in * 1000));
+        await setSetting(userId, 'spotify_access_token', token);
+        await setSetting(userId, 'spotify_token_expiry', String(Date.now() + data.expires_in * 1000));
         if (data.refresh_token) {
-            setSetting('spotify_refresh_token', data.refresh_token);
+            await setSetting(userId, 'spotify_refresh_token', data.refresh_token);
         }
     }
 
@@ -105,8 +107,8 @@ async function getAccessToken() {
 /**
  * Make an authenticated Spotify API request.
  */
-async function spotifyFetch(endpoint) {
-    const token = await getAccessToken();
+async function spotifyFetch(userId, endpoint) {
+    const token = await getAccessToken(userId);
     const res = await fetch(`${API_BASE}${endpoint}`, {
         headers: { 'Authorization': `Bearer ${token}` },
     });
@@ -121,7 +123,7 @@ async function spotifyFetch(endpoint) {
  * Get user's top artists across all time ranges.
  * Returns deduplicated array of { spotifyId, name, genres, imageUrl, popularity }
  */
-export async function getTopArtists() {
+export async function getTopArtists(userId) {
     const timeRanges = ['long_term', 'medium_term', 'short_term'];
     const allArtists = new Map();
 
@@ -130,9 +132,7 @@ export async function getTopArtists() {
         let hasMore = true;
 
         while (hasMore && offset < 100) {
-            const data = await spotifyFetch(
-                `/me/top/artists?time_range=${range}&limit=50&offset=${offset}`
-            );
+            const data = await spotifyFetch(userId, `/me/top/artists?time_range=${range}&limit=50&offset=${offset}`);
 
             for (const artist of data.items || []) {
                 if (!allArtists.has(artist.id)) {
@@ -158,7 +158,7 @@ export async function getTopArtists() {
  * Get all artists the user follows on Spotify.
  * Uses cursor-based pagination.
  */
-export async function getFollowedArtists() {
+export async function getFollowedArtists(userId) {
     const allArtists = new Map();
     let after = null;
     let hasMore = true;
@@ -168,7 +168,7 @@ export async function getFollowedArtists() {
             ? `?type=artist&limit=50&after=${after}`
             : '?type=artist&limit=50';
 
-        const data = await spotifyFetch(`/me/following${params}`);
+        const data = await spotifyFetch(userId, `/me/following${params}`);
         const artists = data.artists;
 
         for (const artist of artists?.items || []) {
@@ -193,10 +193,10 @@ export async function getFollowedArtists() {
 /**
  * Get ALL unique artists (top + followed), deduplicated by Spotify ID.
  */
-export async function getAllSpotifyArtists() {
+export async function getAllSpotifyArtists(userId) {
     const [top, followed] = await Promise.all([
-        getTopArtists().catch(() => []),
-        getFollowedArtists().catch(() => []),
+        getTopArtists(userId).catch(() => []),
+        getFollowedArtists(userId).catch(() => []),
     ]);
 
     // Merge, dedup by spotifyId
@@ -213,8 +213,8 @@ export async function getAllSpotifyArtists() {
 /**
  * Check if Spotify is connected (has valid tokens).
  */
-export function isSpotifyConnected() {
-    const token = getSetting('spotify_access_token');
-    const refreshToken = getSetting('spotify_refresh_token');
+export async function isSpotifyConnected(userId) {
+    const token = await getSetting(userId, 'spotify_access_token');
+    const refreshToken = await getSetting(userId, 'spotify_refresh_token');
     return !!(token && refreshToken);
 }

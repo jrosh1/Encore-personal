@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getAllSettings, setSetting } from '@/lib/db';
 import { sendTestEmail } from '@/lib/emailer';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
 export async function GET() {
     try {
-        const settings = getAllSettings();
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const settings = await getAllSettings(session.user.id);
+
         // Don't expose passwords in plain text
         if (settings.smtp_pass) {
             settings.smtp_pass = '••••••••';
@@ -20,6 +26,10 @@ export async function GET() {
 
 export async function PUT(request) {
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const userId = session.user.id;
+
         const body = await request.json();
         const allowedKeys = [
             'ticketmaster_api_key',
@@ -36,7 +46,7 @@ export async function PUT(request) {
                 // Don't overwrite with masked value
                 if (key === 'smtp_pass' && value === '••••••••') continue;
                 if (key === 'digest_imap_pass' && value === '••••••••') continue;
-                setSetting(key, value);
+                await setSetting(userId, key, value);
             }
         }
 
@@ -49,7 +59,10 @@ export async function PUT(request) {
 export async function POST(request) {
     // POST is used for test email
     try {
-        const result = await sendTestEmail();
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const result = await sendTestEmail(session.user.id);
         return NextResponse.json(result);
     } catch (err) {
         return NextResponse.json({ error: err.message }, { status: 500 });

@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------------------------------
+// NextAuth Core Tables
+// ------------------------------------------------------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  accounts Account[]
+  sessions Session[]
+
+  // Encore Relations
+  artists  Artist[]
+  events   Event[]
+  settings Setting[]
+  venues   Venue[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ------------------------------------------------------
+// Encore Application Tables
+// ------------------------------------------------------
+
+model Artist {
+  id               Int      @id @default(autoincrement())
+  userId           String   // Multi-tenant isolation
+  name             String
+  musicbrainz_id   String?
+  ticketmaster_id  String?
+  image_url        String?
+  is_member        Boolean  @default(false)
+  parent_artist_id Int?
+  created_at       DateTime @default(now())
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent Artist?  @relation("BandMembers", fields: [parent_artist_id], references: [id], onDelete: Cascade)
+  members Artist[] @relation("BandMembers")
+  
+  urls   ArtistUrl[]
+  events Event[]
+
+  @@unique([userId, musicbrainz_id]) // A user can only track an MBID once
+}
+
+model ArtistUrl {
+  id        Int    @id @default(autoincrement())
+  artist_id Int
+  url_type  String
+  url       String
+
+  artist Artist @relation(fields: [artist_id], references: [id], onDelete: Cascade)
+
+  @@unique([artist_id, url_type])
+}
+
+model Event {
+  id            Int      @id @default(autoincrement())
+  userId        String   // Multi-tenant isolation
+  artist_id     Int
+  title         String
+  venue         String?
+  city          String?
+  state         String?
+  country       String?
+  date          String   // YYYY-MM-DD
+  time          String?
+  source_url    String?
+  source        String   @default("ticketmaster")
+  raw_data      String?  @db.Text
+  first_seen_at DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artist Artist @relation(fields: [artist_id], references: [id], onDelete: Cascade)
+
+  @@unique([artist_id, title, date])
+}
+
+model Venue {
+  id          Int      @id @default(autoincrement())
+  userId      String   // Multi-tenant isolation
+  name        String
+  website_url String
+  city        String?
+  state       String?
+  country     String?
+  created_at  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, website_url]) // A user can't track the same venue URL twice
+}
+
+model Setting {
+  id     Int    @id @default(autoincrement())
+  userId String // Multi-tenant isolation
+  key    String
+  value  String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}

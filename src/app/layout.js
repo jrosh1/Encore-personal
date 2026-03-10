@@ -3,6 +3,9 @@
 import './globals.css';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import AuthProvider from './components/AuthProvider';
+import ProtectedRoute from './components/ProtectedRoute';
+import { useSession, signIn, signOut } from 'next-auth/react';
 
 export default function RootLayout({ children }) {
     return (
@@ -13,12 +16,16 @@ export default function RootLayout({ children }) {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
             </head>
             <body>
-                <div className="app-layout">
-                    <Sidebar />
-                    <main className="main-content">
-                        {children}
-                    </main>
-                </div>
+                <AuthProvider>
+                    <div className="app-layout">
+                        <Sidebar />
+                        <main className="main-content">
+                            <ProtectedRoute>
+                                {children}
+                            </ProtectedRoute>
+                        </main>
+                    </div>
+                </AuthProvider>
             </body>
         </html>
     );
@@ -26,6 +33,7 @@ export default function RootLayout({ children }) {
 
 function Sidebar() {
     const pathname = usePathname();
+    const { data: session, status } = useSession();
 
     return (
         <aside className="sidebar">
@@ -83,9 +91,22 @@ function Sidebar() {
             </nav>
 
             <div className="sidebar-footer">
-                <div className="sync-status" id="sync-status">
-                    Ready
-                </div>
+                {status === 'loading' ? (
+                    <div className="sync-status">Loading session...</div>
+                ) : session ? (
+                    <div className="user-profile">
+                        <div className="sync-status" style={{ marginBottom: '8px' }}>
+                            Logged in as {session.user.name || session.user.email}
+                        </div>
+                        <button onClick={() => signOut()} className="secondary-button" style={{ width: '100%' }}>
+                            Sign Out
+                        </button>
+                    </div>
+                ) : (
+                    <button onClick={() => signIn()} className="primary-button" style={{ width: '100%' }}>
+                        Sign In
+                    </button>
+                )}
             </div>
         </aside>
     );

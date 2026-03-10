@@ -1,11 +1,8 @@
-import { getAllArtists, upsertEvent, getSetting, getNewEventsSince, getDb } from './db.js';
+import { getAllArtists, upsertEvent, getSetting } from './db.js';
 import { searchEvents, getEventsByAttraction, searchAttraction } from './ticketmaster.js';
 import { scrapeWebsiteEvents, scrapeInstagramEvents, scrapeFacebookEvents } from './scraper.js';
+import prisma from './prisma.js';
 
-/**
- * Cover band / tribute act detection.
- * Returns true if the event looks like it's from a cover/tribute band.
- */
 const COVER_BAND_PATTERNS = [
     /\btribut/i,
     /\bexperience\b/i,
@@ -31,13 +28,10 @@ function isCoverBandEvent(event, canonicalArtistName) {
     const title = (event.title || '').toLowerCase();
     const canonicalLower = canonicalArtistName.toLowerCase().trim();
 
-    // Check title for tribute/cover patterns
     for (const pattern of COVER_BAND_PATTERNS) {
         if (pattern.test(title)) return true;
     }
 
-    // Check if the event title contains the artist name with a suspicious suffix
-    // e.g. "Red Hot Chili Peppers UK" or "Radiohead Project"
     for (const suffix of COVER_BAND_SUFFIXES) {
         const withSuffix = new RegExp(
             canonicalLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+' + suffix.source,
@@ -45,72 +39,41 @@ function isCoverBandEvent(event, canonicalArtistName) {
         );
         if (withSuffix.test(title)) return true;
     }
-
     return false;
 }
 
-/**
- * Check if an artist name closely matches the canonical name.
- * Uses normalized comparison — not a fuzzy match, but handles common variations.
- */
-function nameMatchesArtist(eventArtistName, canonicalName) {
-    if (!eventArtistName) return true; // Can't filter, allow through
-    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const canonical = normalize(canonicalName);
-    const event = normalize(eventArtistName);
-
-    // Exact match after normalization
-    if (event === canonical) return true;
-
-    // One contains the other (for "Thom Yorke" matching "Thom Yorke Tomorrow's Modern Boxes")
-    if (event.includes(canonical) || canonical.includes(event)) return true;
-
-    return false;
-}
-
-/**
- * Sync events for a single artist from all sources.
- * Returns { newEvents: number, totalEvents: number }
- */
-export async function syncArtistEvents(artist) {
-    const apiKey = getSetting('ticketmaster_api_key');
+export async function syncArtistEvents(userId, artist) {
+    if (!userId) throw new Error("userId required");
+    const apiKey = await getSetting(userId, 'ticketmaster_api_key');
     let newEvents = 0;
     let totalEvents = 0;
 
-    // 1. Ticketmaster API — prefer attraction ID for precision
+    // 1. Ticketmaster API
     if (apiKey) {
-        const countryCode = getSetting('filter_country') || undefined;
-        const stateCode = getSetting('filter_state') || undefined;
+        const countryCode = await getSetting(userId, 'filter_country') || undefined;
+        const stateCode = await getSetting(userId, 'filter_state') || undefined;
         const locationFilter = { countryCode, stateCode };
 
         try {
             let tmEvents = [];
-
             if (artist.ticketmaster_id) {
-                // Use precise attraction-based lookup (no cover bands!)
                 tmEvents = await getEventsByAttraction(artist.ticketmaster_id, apiKey, locationFilter);
             } else {
-                // Fallback to keyword search + resolve attraction for next time
                 tmEvents = await searchEvents(artist.name, apiKey, locationFilter);
-
-                // Try to resolve and store attraction ID for future lookups
                 try {
                     const attraction = await searchAttraction(artist.name, apiKey);
                     if (attraction?.id) {
-                        const db = getDb();
-                        db.prepare('UPDATE artists SET ticketmaster_id = ? WHERE id = ?')
-                            .run(attraction.id, artist.id);
+                        await prisma.artist.update({
+                            where: { id: artist.id },
+                            data: { ticketmaster_id: attraction.id }
+                        });
                     }
                 } catch { /* non-fatal */ }
             }
 
-            // Filter out cover/tribute band events
             for (const event of tmEvents) {
-                if (isCoverBandEvent(event, artist.name)) {
-                    console.log(`  ⚠ Filtered cover band event: "${event.title}" for ${artist.name}`);
-                    continue;
-                }
-                const result = upsertEvent({ ...event, artist_id: artist.id });
+                if (isCoverBandEvent(event, artist.name)) continue;
+                const result = await upsertEvent(userId, { ...event, artist_id: artist.id });
                 if (result.isNew) newEvents++;
                 totalEvents++;
             }
@@ -126,13 +89,11 @@ export async function syncArtistEvents(artist) {
         try {
             const webEvents = await scrapeWebsiteEvents(urlObj.url);
             for (const event of webEvents) {
-                const result = upsertEvent({ ...event, artist_id: artist.id });
+                const result = await upsertEvent(userId, { ...event, artist_id: artist.id });
                 if (result.isNew) newEvents++;
                 totalEvents++;
             }
-        } catch (err) {
-            console.error(`Website scrape error for ${urlObj.url}:`, err.message);
-        }
+        } catch (err) { }
     }
 
     // 3. Scrape Instagram
@@ -141,13 +102,11 @@ export async function syncArtistEvents(artist) {
         try {
             const igEvents = await scrapeInstagramEvents(urlObj.url);
             for (const event of igEvents) {
-                const result = upsertEvent({ ...event, artist_id: artist.id });
+                const result = await upsertEvent(userId, { ...event, artist_id: artist.id });
                 if (result.isNew) newEvents++;
                 totalEvents++;
             }
-        } catch (err) {
-            console.error(`Instagram scrape error for ${urlObj.url}:`, err.message);
-        }
+        } catch (err) { }
     }
 
     // 4. Scrape Facebook
@@ -156,59 +115,49 @@ export async function syncArtistEvents(artist) {
         try {
             const fbEvents = await scrapeFacebookEvents(urlObj.url);
             for (const event of fbEvents) {
-                const result = upsertEvent({ ...event, artist_id: artist.id });
+                const result = await upsertEvent(userId, { ...event, artist_id: artist.id });
                 if (result.isNew) newEvents++;
                 totalEvents++;
             }
-        } catch (err) {
-            console.error(`Facebook scrape error for ${urlObj.url}:`, err.message);
-        }
+        } catch (err) { }
     }
 
     return { newEvents, totalEvents };
 }
 
-/**
- * Sync events for ALL tracked artists (bands + members) + venue schedules.
- * Returns summary of what was found.
- */
-export async function syncAllArtists() {
-    const artists = getAllArtists();
+export async function syncAllArtists(userId) {
+    if (!userId) throw new Error("userId required");
+    const artists = await getAllArtists(userId);
     const syncStart = new Date().toISOString();
     let totalNew = 0;
     let totalEvents = 0;
 
     for (const artist of artists) {
-        // Sync the main artist
-        const mainResult = await syncArtistEvents(artist);
+        const mainResult = await syncArtistEvents(userId, artist);
         totalNew += mainResult.newEvents;
         totalEvents += mainResult.totalEvents;
 
-        // Sync each member
         if (artist.members) {
             for (const member of artist.members) {
-                member.urls = [];
-                const db = getDb();
-                member.urls = db.prepare('SELECT * FROM artist_urls WHERE artist_id = ?').all(member.id);
-                const memberResult = await syncArtistEvents(member);
+                const urls = await prisma.artistUrl.findMany({ where: { artist_id: member.id } });
+                const memberWithUrls = { ...member, urls };
+                const memberResult = await syncArtistEvents(userId, memberWithUrls);
                 totalNew += memberResult.newEvents;
                 totalEvents += memberResult.totalEvents;
             }
         }
     }
 
-    // Sync venue schedules
     try {
-        const venueResult = await syncVenueSchedules(artists);
+        const venueResult = await syncVenueSchedules(userId, artists);
         totalNew += venueResult.newEvents;
         totalEvents += venueResult.totalEvents;
     } catch (err) {
         console.error('Venue sync error:', err.message);
     }
 
-    // Update last sync time
     const { setSetting } = await import('./db.js');
-    setSetting('last_sync', syncStart);
+    await setSetting(userId, 'last_sync', syncStart);
 
     return {
         syncedAt: syncStart,
@@ -218,19 +167,14 @@ export async function syncAllArtists() {
     };
 }
 
-/**
- * Scrape event schedules from all tracked venues.
- * Matches scraped events against tracked artists to avoid duplicates and only store relevant events.
- */
-async function syncVenueSchedules(artists) {
+async function syncVenueSchedules(userId, artists) {
     const { getAllVenues } = await import('./db.js');
-    const venues = getAllVenues();
+    const venues = await getAllVenues(userId);
     let newEvents = 0;
     let totalEvents = 0;
 
     if (venues.length === 0) return { newEvents, totalEvents };
 
-    // Build a set of all tracked artist names (lowercased) for matching
     const allArtistNames = new Map();
     for (const artist of artists) {
         allArtistNames.set(artist.name.toLowerCase(), artist);
@@ -242,12 +186,10 @@ async function syncVenueSchedules(artists) {
     }
 
     for (const venue of venues) {
-        console.log(`  📍 Scraping venue: ${venue.name} (${venue.website_url})`);
         try {
             const venueEvents = await scrapeWebsiteEvents(venue.website_url);
 
             for (const event of venueEvents) {
-                // Try to match this event to a tracked artist
                 const eventTitle = (event.title || '').toLowerCase();
                 let matchedArtist = null;
 
@@ -259,8 +201,7 @@ async function syncVenueSchedules(artists) {
                 }
 
                 if (matchedArtist) {
-                    // Store as an event for the matched artist — auto-dedups via upsert
-                    const result = upsertEvent({
+                    const result = await upsertEvent(userId, {
                         ...event,
                         artist_id: matchedArtist.id,
                         venue: venue.name,
@@ -273,11 +214,8 @@ async function syncVenueSchedules(artists) {
                     totalEvents++;
                 }
             }
-        } catch (err) {
-            console.error(`  Venue scrape error for ${venue.name}:`, err.message);
-        }
+        } catch (err) { }
     }
 
     return { newEvents, totalEvents };
 }
-

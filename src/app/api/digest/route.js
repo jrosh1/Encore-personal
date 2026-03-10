@@ -1,15 +1,21 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
 /**
  * GET — preview the digest (fetch recent emails and build summary)
  */
 export async function GET(request) {
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const userId = session.user.id;
+
         const { fetchRecentEmails, buildDigestSummary } = await import('@/lib/email-digest');
         const { searchParams } = new URL(request.url);
         const days = parseInt(searchParams.get('days') || '7');
 
-        const emails = await fetchRecentEmails(days);
+        const emails = await fetchRecentEmails(userId, days);
         const digest = buildDigestSummary(emails);
 
         return NextResponse.json({
@@ -34,8 +40,12 @@ export async function GET(request) {
  */
 export async function POST() {
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const userId = session.user.id;
+
         const { sendDigestEmail } = await import('@/lib/email-digest');
-        const result = await sendDigestEmail();
+        const result = await sendDigestEmail(userId);
         return NextResponse.json(result);
     } catch (err) {
         console.error('[Digest POST] Error:', err);

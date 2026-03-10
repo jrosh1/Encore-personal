@@ -3,10 +3,16 @@ import { getAllArtists, addArtist, addArtistUrl, removeArtist, getDb, getSetting
 import { searchArtist, getFullArtistInfo } from '@/lib/musicbrainz';
 import { searchAttraction } from '@/lib/ticketmaster';
 import { syncArtistEvents } from '@/lib/sync';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import prisma from '@/lib/prisma';
 
 export async function GET() {
     try {
-        const artists = getAllArtists();
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const artists = await getAllArtists(session.user.id);
         return NextResponse.json({ artists });
     } catch (err) {
         return NextResponse.json({ error: err.message }, { status: 500 });
@@ -15,6 +21,10 @@ export async function GET() {
 
 export async function POST(request) {
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const userId = session.user.id;
+
         const { name, mbid } = await request.json();
         if (!name && !mbid) {
             return NextResponse.json({ error: 'Name or MBID required' }, { status: 400 });
@@ -28,7 +38,7 @@ export async function POST(request) {
             const results = await searchArtist(artistName);
             if (results.length === 0) {
                 // Add without MusicBrainz data
-                const id = addArtist({ name: artistName });
+                const id = await addArtist(userId, { name: artistName });
                 return NextResponse.json({
                     artist: { id, name: artistName, members: [], urls: [] },
                     message: 'Artist added (not found on MusicBrainz)'
@@ -53,8 +63,9 @@ export async function POST(request) {
         }
 
         // Check if already tracked
-        const db = getDb();
-        const existing = db.prepare('SELECT id FROM artists WHERE musicbrainz_id = ? AND is_member = 0').get(artistMbid);
+        const existing = await prisma.artist.findFirst({
+            where: { musicbrainz_id: artistMbid, is_member: false, userId }
+        });
         if (existing) {
             return NextResponse.json({ error: 'Artist already tracked' }, { status: 409 });
         }
@@ -65,7 +76,7 @@ export async function POST(request) {
         // Add main artist
         // First, try to resolve Ticketmaster attraction ID for precise event lookups
         let ticketmasterId = null;
-        const tmApiKey = getSetting('ticketmaster_api_key');
+        const tmApiKey = await getSetting(userId, 'ticketmaster_api_key');
         if (tmApiKey) {
             try {
                 const attraction = await searchAttraction(info.name || artistName, tmApiKey);
@@ -73,7 +84,7 @@ export async function POST(request) {
             } catch { /* non-fatal */ }
         }
 
-        const artistId = addArtist({
+        const artistId = await addArtist(userId, {
             name: info.name || artistName,
             musicbrainz_id: artistMbid,
             ticketmaster_id: ticketmasterId,
@@ -81,7 +92,7 @@ export async function POST(request) {
 
         // Add URLs for the main artist
         for (const urlObj of info.urls) {
-            addArtistUrl(artistId, urlObj.type, urlObj.url);
+            await addArtistUrl(userId, artistId, urlObj.type, urlObj.url);
         }
 
         // Add band members (if it's a group)
@@ -89,12 +100,12 @@ export async function POST(request) {
         if (info.type === 'Group' && info.members.length > 0) {
             for (const member of info.members) {
                 // Check if member already exists
-                const existingMember = db.prepare(
-                    'SELECT id FROM artists WHERE musicbrainz_id = ? AND parent_artist_id = ?'
-                ).get(member.mbid, artistId);
+                const existingMember = await prisma.artist.findFirst({
+                    where: { musicbrainz_id: member.mbid, parent_artist_id: artistId, userId }
+                });
 
                 if (!existingMember) {
-                    const memberId = addArtist({
+                    const memberId = await addArtist(userId, {
                         name: member.name,
                         musicbrainz_id: member.mbid,
                         is_member: true,
@@ -105,7 +116,7 @@ export async function POST(request) {
                     try {
                         const memberInfo = await getFullArtistInfo(member.mbid);
                         for (const urlObj of memberInfo.urls) {
-                            addArtistUrl(memberId, urlObj.type, urlObj.url);
+                            await addArtistUrl(userId, memberId, urlObj.type, urlObj.url);
                         }
                     } catch {
                         // Non-critical, continue
@@ -117,11 +128,13 @@ export async function POST(request) {
         }
 
         // Trigger initial event sync
-        const artist = getAllArtists().find(a => a.id === Number(artistId));
         let syncResult = { newEvents: 0, totalEvents: 0 };
+        const allArtists = await getAllArtists(userId);
+        const artist = allArtists.find(a => a.id === Number(artistId));
+
         if (artist) {
             try {
-                syncResult = await syncArtistEvents(artist);
+                syncResult = await syncArtistEvents(userId, artist);
             } catch (err) {
                 console.error('Initial sync error:', err.message);
             }
@@ -145,12 +158,15 @@ export async function POST(request) {
 
 export async function DELETE(request) {
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');
         if (!id) {
             return NextResponse.json({ error: 'ID required' }, { status: 400 });
         }
-        removeArtist(parseInt(id));
+        await removeArtist(session.user.id, parseInt(id));
         return NextResponse.json({ success: true });
     } catch (err) {
         return NextResponse.json({ error: err.message }, { status: 500 });

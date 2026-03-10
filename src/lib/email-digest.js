@@ -6,11 +6,12 @@ import { getSetting } from './db.js';
  * Connect to the dedicated IMAP inbox and fetch recent emails.
  * Returns parsed emails from the last N days.
  */
-export async function fetchRecentEmails(daysBack = 7) {
-    const host = getSetting('digest_imap_host');
-    const port = parseInt(getSetting('digest_imap_port') || '993');
-    const user = getSetting('digest_imap_user');
-    const pass = getSetting('digest_imap_pass');
+export async function fetchRecentEmails(userId, daysBack = 7) {
+    if (!userId) throw new Error("userId required");
+    const host = await getSetting(userId, 'digest_imap_host');
+    const port = parseInt(await getSetting(userId, 'digest_imap_port') || '993');
+    const user = await getSetting(userId, 'digest_imap_user');
+    const pass = await getSetting(userId, 'digest_imap_pass');
 
     if (!host || !user || !pass) {
         throw new Error('Digest inbox IMAP credentials not configured');
@@ -155,21 +156,22 @@ function escapeHtml(str) {
 /**
  * Send the weekly digest email.
  */
-export async function sendDigestEmail() {
+export async function sendDigestEmail(userId) {
+    if (!userId) throw new Error("userId required");
     const nodemailer = (await import('nodemailer')).default;
 
-    const smtpHost = getSetting('smtp_host');
-    const smtpPort = parseInt(getSetting('smtp_port') || '587');
-    const smtpUser = getSetting('smtp_user');
-    const smtpPass = getSetting('smtp_pass');
-    const recipientEmail = getSetting('notification_email');
+    const smtpHost = await getSetting(userId, 'smtp_host');
+    const smtpPort = parseInt(await getSetting(userId, 'smtp_port') || '587');
+    const smtpUser = await getSetting(userId, 'smtp_user');
+    const smtpPass = await getSetting(userId, 'smtp_pass');
+    const recipientEmail = await getSetting(userId, 'notification_email');
 
     if (!smtpHost || !smtpUser || !smtpPass || !recipientEmail) {
         throw new Error('SMTP or notification email not configured');
     }
 
     // Fetch emails from the digest inbox
-    const emails = await fetchRecentEmails(7);
+    const emails = await fetchRecentEmails(userId, 7);
 
     // Build the digest
     const digest = buildDigestSummary(emails);
